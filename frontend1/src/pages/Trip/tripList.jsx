@@ -2,21 +2,28 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import api from "../../api/axios";
+import StartTripModal from "./StartTripModal";
 
 export default function TripList() {
   const [trips, setTrips] = useState([]);
+  const [showStartModal, setShowStartModal] = useState(false);
   const navigate = useNavigate();
 
-  useEffect(() => {
+  const loadTrips = () => {
     api.get("/trips").then((res) => setTrips(res.data));
+  };
+
+  useEffect(() => {
+    loadTrips();
   }, []);
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <div className="flex justify-between mb-6">
         <h2 className="text-2xl font-bold">Trips</h2>
+
         <button
-          onClick={() => navigate("/trips/start")}
+          onClick={() => setShowStartModal(true)}
           className="bg-blue-600 text-white px-4 py-2 rounded-lg"
         >
           Start Trip
@@ -32,7 +39,9 @@ export default function TripList() {
             onClick={() => navigate(`/trips/${trip._id}`)}
             className="bg-white p-4 rounded-xl shadow cursor-pointer"
           >
-            <p className="font-semibold">Bus: {trip.busId?.busNumber || "—"}</p>
+            <p className="font-semibold">
+              Bus: {trip.busId?.busNumber || "—"}
+            </p>
 
             <p className="text-sm text-slate-500">
               Distance:{" "}
@@ -54,6 +63,15 @@ export default function TripList() {
           </div>
         ))}
       </div>
+
+      {showStartModal && (
+        <StartTripModal
+          onClose={() => {
+            setShowStartModal(false);
+            loadTrips();
+          }}
+        />
+      )}
     </motion.div>
   );
 }
