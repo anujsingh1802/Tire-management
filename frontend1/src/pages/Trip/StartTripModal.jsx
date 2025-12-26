@@ -4,42 +4,6 @@ import api from "../../api/axios";
 import { startTrip } from "../../api/tripApi";
 import { useNavigate } from "react-router-dom";
 
-/* ===== Motion Variants (Premium, Subtle) ===== */
-const backdropVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { duration: 0.2, ease: "easeOut" },
-  },
-  exit: {
-    opacity: 0,
-    transition: { duration: 0.15, ease: "easeInOut" },
-  },
-};
-
-const modalVariants = {
-  hidden: {
-    opacity: 0,
-    y: 12,
-    scale: 0.98,
-  },
-  visible: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    transition: {
-      duration: 0.22,
-      ease: [0.22, 1, 0.36, 1], // industry cubic-bezier
-    },
-  },
-  exit: {
-    opacity: 0,
-    y: 12,
-    scale: 0.98,
-    transition: { duration: 0.15, ease: "easeInOut" },
-  },
-};
-
 export default function StartTripModal({ onClose }) {
   const [buses, setBuses] = useState([]);
   const [busId, setBusId] = useState("");
@@ -49,7 +13,42 @@ export default function StartTripModal({ onClose }) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    api.get("/buses").then((res) => setBuses(res.data));
+    const loadBusesWithEligibility = async () => {
+      const busRes = await api.get("/buses");
+      const buses = busRes.data;
+
+      const enriched = await Promise.all(
+        buses.map(async (bus) => {
+          const slotRes = await api.get(`/bus-tire-slots/${bus._id}`);
+          const slots = slotRes.data;
+
+          // Extract mounted tires
+          const mountedTires = slots
+            .map((s) => s.tireId)
+            .filter(Boolean);
+
+          // If any tire is expired / damaged / zero remaining
+          const invalidTire = mountedTires.find(
+            (t) =>
+              t.isExpired ||
+              t.status !== "mounted" ||
+              t.remainingKm <= 0
+          );
+
+          return {
+            ...bus,
+            eligible: !invalidTire,
+            reason: invalidTire
+              ? "Not eligible – tire life exhausted"
+              : "Eligible",
+          };
+        })
+      );
+
+      setBuses(enriched);
+    };
+
+    loadBusesWithEligibility();
   }, []);
 
   const handleStart = async () => {
@@ -61,7 +60,6 @@ export default function StartTripModal({ onClose }) {
         busId,
         totalDistance: Number(totalDistance),
       });
-
       onClose();
       navigate(`/trips/${res.data._id}`);
     } finally {
@@ -71,73 +69,65 @@ export default function StartTripModal({ onClose }) {
 
   return (
     <AnimatePresence>
-      {/* ===== Backdrop ===== */}
       <motion.div
-        variants={backdropVariants}
-        initial="hidden"
-        animate="visible"
-        exit="exit"
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-[2px]"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
         onClick={onClose}
       >
-        {/* ===== Modal ===== */}
         <motion.div
-          variants={modalVariants}
-          initial="hidden"
-          animate="visible"
-          exit="exit"
+          initial={{ y: 12, opacity: 0, scale: 0.98 }}
+          animate={{ y: 0, opacity: 1, scale: 1 }}
+          exit={{ y: 12, opacity: 0, scale: 0.98 }}
+          transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
           onClick={(e) => e.stopPropagation()}
           className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
         >
-          {/* Header */}
-          <div className="mb-5">
-            <h3 className="text-lg font-semibold text-slate-900">
-              Start Trip
-            </h3>
-            <p className="text-sm text-slate-500">
-              Select a bus and planned distance
-            </p>
-          </div>
+          <h3 className="text-lg font-semibold mb-4">Start Trip</h3>
 
-          {/* Form */}
-          <div className="space-y-4">
-            <select
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              value={busId}
-              onChange={(e) => setBusId(e.target.value)}
-            >
-              <option value="">Select Bus</option>
-              {buses.map((b) => (
-                <option key={b._id} value={b._id}>
-                  {b.busNumber}
-                </option>
-              ))}
-            </select>
+          {/* BUS SELECT */}
+          <select
+            className="w-full rounded-lg border px-3 py-2 mb-3 text-sm"
+            value={busId}
+            onChange={(e) => setBusId(e.target.value)}
+          >
+            <option value="">Select Bus</option>
 
-            <input
-              type="number"
-              placeholder="Total Distance (km)"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              value={totalDistance}
-              onChange={(e) => setTotalDistance(e.target.value)}
-            />
-          </div>
+            {buses.map((b) => (
+              <option
+                key={b._id}
+                value={b._id}
+                disabled={!b.eligible}
+                className={
+                  b.eligible
+                    ? "text-slate-900"
+                    : "text-red-600 font-semibold"
+                }
+              >
+                {b.busNumber} — {b.reason}
+              </option>
+            ))}
+          </select>
 
-          {/* Actions */}
-          <div className="mt-6 flex justify-end gap-3">
-            <button
-              onClick={onClose}
-              className="text-sm text-slate-600 hover:text-slate-900"
-            >
+          <input
+            type="number"
+            placeholder="Total Distance (km)"
+            className="w-full rounded-lg border px-3 py-2 mb-5 text-sm"
+            value={totalDistance}
+            onChange={(e) => setTotalDistance(e.target.value)}
+          />
+
+          <div className="flex justify-end gap-3">
+            <button onClick={onClose} className="text-sm">
               Cancel
             </button>
 
             <motion.button
               whileTap={{ scale: 0.97 }}
-              transition={{ duration: 0.1 }}
-              disabled={loading || !busId || !totalDistance}
+              disabled={!busId || !totalDistance || loading}
               onClick={handleStart}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-50"
             >
               {loading ? "Starting..." : "Start Trip"}
             </motion.button>
