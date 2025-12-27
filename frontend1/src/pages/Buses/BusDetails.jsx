@@ -4,14 +4,34 @@ import { motion } from "framer-motion";
 import { getBusById, getBusTireSlots } from "../../api/busApi";
 import MountTireModal from "./MountTire";
 import UnmountTireModal from "./UnmountTireModal";
+import BusIsometricSVG from "../../components/bus/BusIsometricSVG";
+
+/* SLOT → POSITION MAP */
+const SLOT_TO_POS = {
+  "slot-1": "FL",
+  "slot-2": "FR",
+  "slot-3": "RL",
+  "slot-4": "RR",
+  "slot-5": "RL2",
+  "slot-6": "RR2",
+};
+
+/* STATUS → COLOR */
+const getTireColor = (tire) => {
+  if (!tire) return "#22c55e";          // empty
+  if (tire.isExpired) return "#ef4444"; // expired
+  if (tire.status === "damaged") return "#f59e0b";
+  return "#2563eb";                     // mounted
+};
 
 export default function BusDetails() {
   const { id } = useParams();
-  const navigate = useNavigate(); 
+  const navigate = useNavigate();
+
   const [bus, setBus] = useState(null);
   const [dbSlots, setDbSlots] = useState([]);
   const [activeSlot, setActiveSlot] = useState(null);
-  const [mode, setMode] = useState(null); // mount | unmount
+  const [mode, setMode] = useState(null);
 
   const loadData = async () => {
     const [busRes, slotRes] = await Promise.all([
@@ -29,7 +49,7 @@ export default function BusDetails() {
 
   if (!bus) return null;
 
-  //  CREATE VIRTUAL SLOTS
+  /* CREATE VIRTUAL SLOTS */
   const allSlots = Array.from({ length: bus.totalSlots }, (_, i) => {
     const slotPosition = `slot-${i + 1}`;
     const mountedSlot = dbSlots.find(
@@ -43,6 +63,37 @@ export default function BusDetails() {
     };
   });
 
+  /* BUILD SVG DATA */
+  const tireStatusMap = {};
+  const tireInfoMap = {};
+
+  allSlots.forEach((slot) => {
+    const pos = SLOT_TO_POS[slot.slotPosition];
+    if (!pos) return;
+
+    const tire = slot.data?.tireId || null;
+    tireStatusMap[pos] = getTireColor(tire);
+    tireInfoMap[pos] = tire;
+  });
+
+  /* TIRE CLICK HANDLER */
+  const handleTireClick = (pos) => {
+    const slotKey = Object.keys(SLOT_TO_POS)
+      .find((k) => SLOT_TO_POS[k] === pos);
+
+    const slot = allSlots.find(
+      (s) => s.slotPosition === slotKey
+    );
+
+    if (slot?.mounted) {
+      setActiveSlot(slot.data);
+      setMode("unmount");
+    } else {
+      setActiveSlot(slotKey);
+      setMode("mount");
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -53,61 +104,20 @@ export default function BusDetails() {
         🚍 Bus {bus.busNumber}
       </h2>
 
-      {/* HISTORY BUTTON */}
       <button
         onClick={() => navigate(`/history/bus-summary/${bus._id}`)}
-        className="mb-6 bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-700"
+        className="mb-6 bg-slate-800 text-white px-4 py-2 rounded-lg"
       >
         View Bus History
       </button>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {allSlots.map((slot) => (
-          <motion.div
-            key={slot.slotPosition}
-            whileHover={{ scale: 1.03 }}
-            className="bg-white p-4 rounded-xl shadow border"
-          >
-            <p className="text-xs text-slate-500">Slot</p>
-            <p className="font-semibold">{slot.slotPosition}</p>
-
-            <p className="mt-2 text-sm">
-              Tire:{" "}
-              {slot.mounted ? (
-                <span className="font-medium">
-                  {slot.data.tireId.tireCode}
-                </span>
-              ) : (
-                <span className="text-green-600">Empty</span>
-              )}
-            </p>
-
-            <div className="mt-4">
-              {slot.mounted ? (
-                <button
-                  onClick={() => {
-                    setActiveSlot(slot.data);
-                    setMode("unmount");
-                  }}
-                  className="w-full bg-red-600 text-white py-2 rounded-lg"
-                >
-                  Unmount Tire
-                </button>
-              ) : (
-                <button
-                  onClick={() => {
-                    setActiveSlot(slot.slotPosition);
-                    setMode("mount");
-                  }}
-                  className="w-full bg-green-600 text-white py-2 rounded-lg"
-                >
-                  Mount Tire
-                </button>
-              )}
-            </div>
-          </motion.div>
-        ))}
-      </div>
+      <BusIsometricSVG
+        bus={bus}
+        tireStatusMap={tireStatusMap}
+        tireInfoMap={tireInfoMap}
+        onBusClick={() => {}}
+        onTireClick={handleTireClick}
+      />
 
       {/* MODALS */}
       {mode === "mount" && activeSlot && (
