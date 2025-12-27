@@ -18,7 +18,7 @@ exports.createTire = async ({ tireCode, maxLifeKm }) => {
 };
 
 /**
- * GET ALL (NO DB WRITES)
+ * GET ALL
  */
 exports.getAllTires = async () => {
   const tires = await Tire.find();
@@ -59,24 +59,64 @@ exports.getTireById = async (id) => {
 };
 
 /**
- * REPAIR TIRE
+ * 🔧 HYBRID REPAIR TIRE
  */
-exports.repairTire = async (id) => {
+exports.repairTire = async (id, body) => {
+  const { type, newTireCode, maxLifeKm } = body;
+
   const tire = await Tire.findById(id);
   if (!tire) throw new Error("Tire not found");
 
+  // ❌ expired tire cannot be repaired
   if (tire.currentLifeKm >= tire.maxLifeKm) {
     throw new Error("Expired tire cannot be repaired");
   }
 
-  if (tire.status !== "punctured") {
-    throw new Error("Only punctured tires can be repaired");
+  // ✅ NOW WORKS (damaged is valid enum)
+  if (tire.status !== "damaged") {
+    throw new Error("Only damaged tires can be repaired");
   }
 
-  tire.status = "repaired";
-  await tire.save();
+  /* 🔁 FLOW A: MINOR REPAIR */
+  if (type === "minor") {
+    tire.status = "available";
+    tire.repairCount += 1;
+    tire.lastRepairDate = new Date();
+    await tire.save();
 
-  return tire;
+    return {
+      message: "Minor repair completed",
+      tire,
+    };
+  }
+
+  /* 🔁 FLOW B: RETREAD */
+  if (type === "retread") {
+    if (!newTireCode || !maxLifeKm) {
+      throw new Error("Retread requires new tire code and life");
+    }
+
+    tire.status = "repaired";
+    tire.repairCount += 1;
+    tire.lastRepairDate = new Date();
+    await tire.save();
+
+    const newTire = await Tire.create({
+      tireCode: newTireCode,
+      originalTireCode: tire.tireCode,
+      maxLifeKm,
+      currentLifeKm: 0,
+      status: "available",
+    });
+
+    return {
+      message: "Retread completed",
+      oldTire: tire,
+      newTire,
+    };
+  }
+
+  throw new Error("Invalid repair type");
 };
 
 /**
